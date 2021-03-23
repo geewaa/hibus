@@ -1,4 +1,4 @@
-package clntside
+package srvside
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 
 	"go.etcd.io/etcd/clientv3"
 )
+
+const schema = "grpclb"
 
 //ServiceRegister 创建租约注册服务
 type ServiceRegister struct {

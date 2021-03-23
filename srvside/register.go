@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 )
 
 const schema = "grpclb"

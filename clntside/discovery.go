@@ -40,11 +40,12 @@ func NewServiceDiscovery(endpoints []string) resolver.Builder {
 
 //Build 为给定目标创建一个新的`resolver`，当调用`grpc.Dial()`时执行
 func (s *ServiceDiscovery) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOption) (resolver.Resolver, error) {
-	log.Println("Build")
 	s.cc = cc
 	s.prefix = "/" + target.Scheme + "/" + target.Endpoint + "/"
 	//根据前缀获取现有的key
-	resp, err := s.cli.Get(context.Background(), s.prefix, clientv3.WithPrefix())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	resp, err := s.cli.Get(ctx, s.prefix, clientv3.WithPrefix())
 	if err != nil {
 		return nil, err
 	}
@@ -104,14 +105,12 @@ func (s *ServiceDiscovery) SetServiceList(key, val string) {
 	addr = SetAddrInfo(addr, AddrInfo{Weight: nodeWeight})
 	s.serverList.Store(key, addr)
 	s.cc.UpdateState(resolver.State{Addresses: s.getServices()})
-	log.Println("put key :", key, "wieght:", val)
 }
 
 //DelServiceList 删除服务地址
 func (s *ServiceDiscovery) DelServiceList(key string) {
 	s.serverList.Delete(key)
 	s.cc.UpdateState(resolver.State{Addresses: s.getServices()})
-	log.Println("del key:", key)
 }
 
 //GetServices 获取服务地址

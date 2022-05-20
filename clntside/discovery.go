@@ -2,14 +2,19 @@ package clntside
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/coreos/etcd/clientv3"
-	"github.com/coreos/etcd/mvcc/mvccpb"
+	// "go.etcd.io/etcd/api/v3"
+	"go.etcd.io/etcd/api/v3/mvccpb"
+	client "go.etcd.io/etcd/client/v3"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/resolver"
 )
 
@@ -17,35 +22,45 @@ const schema = "grpclb"
 
 //ServiceDiscovery 服务发现
 type ServiceDiscovery struct {
-	cli        *clientv3.Client //etcd client
+	cli        *client.Client //etcd client
 	cc         resolver.ClientConn
 	serverList sync.Map //服务列表
 	prefix     string   //监视的前缀
 }
 
 //NewServiceDiscovery  新建发现服务
-func NewServiceDiscovery(endpoints []string) resolver.Builder {
-	cli, err := clientv3.New(clientv3.Config{
+// endpoints: etcd node address
+func NewServiceDiscovery(endpoints []string) *ServiceDiscovery {
+	cli, err := client.New(client.Config{
 		Endpoints:   endpoints,
 		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	return &ServiceDiscovery{
+	r := &ServiceDiscovery{
 		cli: cli,
 	}
+	resolver.Register(r)
+
+	return r
+}
+
+func (s ServiceDiscovery) Dial(srvname string) (*grpc.ClientConn, error) {
+	return grpc.Dial(
+		fmt.Sprintf("%s:///%s", s.Scheme(), srvname),
+		grpc.WithDefaultServiceConfig(fmt.Sprintf(`{"LoadBalancingPolicy": "%s"}`, "weight")),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
 }
 
 //Build 为给定目标创建一个新的`resolver`，当调用`grpc.Dial()`时执行
-func (s *ServiceDiscovery) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOption) (resolver.Resolver, error) {
+func (s *ServiceDiscovery) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (resolver.Resolver, error) {
 	s.cc = cc
-	s.prefix = "/" + target.Scheme + "/" + target.Endpoint + "/"
+	s.prefix = "/" + target.URL.Scheme + target.URL.Path + "/"
 	//根据前缀获取现有的key
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
-	resp, err := s.cli.Get(ctx, s.prefix, clientv3.WithPrefix())
+	resp, err := s.cli.Get(ctx, s.prefix, client.WithPrefix())
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +75,7 @@ func (s *ServiceDiscovery) Build(target resolver.Target, cc resolver.ClientConn,
 }
 
 // ResolveNow 监视目标更新
-func (s *ServiceDiscovery) ResolveNow(rn resolver.ResolveNowOption) {
+func (s *ServiceDiscovery) ResolveNow(rn resolver.ResolveNowOptions) {
 	log.Println("ResolveNow")
 }
 
@@ -77,7 +92,7 @@ func (s *ServiceDiscovery) Close() {
 
 //watcher 监听前缀
 func (s *ServiceDiscovery) watcher() {
-	rch := s.cli.Watch(context.Background(), s.prefix, clientv3.WithPrefix())
+	rch := s.cli.Watch(context.Background(), s.prefix, client.WithPrefix())
 	log.Printf("watching prefix:%s now...", s.prefix)
 	for wresp := range rch {
 		for _, ev := range wresp.Events {

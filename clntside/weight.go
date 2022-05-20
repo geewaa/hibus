@@ -31,8 +31,8 @@ type AddrInfo struct {
 // SetAddrInfo returns a copy of addr in which the Attributes field is updated
 // with addrInfo.
 func SetAddrInfo(addr resolver.Address, addrInfo AddrInfo) resolver.Address {
-	addr.Attributes = attributes.New()
-	addr.Attributes = addr.Attributes.WithValues(attributeKey{}, addrInfo)
+	addr.Attributes = attributes.New(attributeKey{}, addrInfo)
+	// addr.Attributes = addr.Attributes.WithValue(attributeKey{}, addrInfo)
 	return addr
 }
 
@@ -45,7 +45,7 @@ func GetAddrInfo(addr resolver.Address) AddrInfo {
 
 // NewBuilder creates a new weight balancer builder.
 func newBuilder() balancer.Builder {
-	return base.NewBalancerBuilderV2(Name, &rrPickerBuilder{}, base.Config{HealthCheck: false})
+	return base.NewBalancerBuilder(Name, &rrPickerBuilder{}, base.Config{HealthCheck: false})
 }
 
 func init() {
@@ -54,10 +54,10 @@ func init() {
 
 type rrPickerBuilder struct{}
 
-func (*rrPickerBuilder) Build(info base.PickerBuildInfo) balancer.V2Picker {
+func (*rrPickerBuilder) Build(info base.PickerBuildInfo) balancer.Picker {
 	grpclog.Infof("weightPicker: newPicker called with info: %v", info)
 	if len(info.ReadySCs) == 0 {
-		return base.NewErrPickerV2(balancer.ErrNoSubConnAvailable)
+		return base.NewErrPicker(balancer.ErrNoSubConnAvailable)
 	}
 	var scs []balancer.SubConn
 	for subConn, addr := range info.ReadySCs {
